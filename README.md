@@ -1,3 +1,3 @@
 # flutter_coffeepub_finder
 
-A new Flutter project.
+Flutter Application Developed to Locate Nearby Cafes and Pubs
