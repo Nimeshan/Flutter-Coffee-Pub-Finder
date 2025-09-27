@@ -1,109 +1,87 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'dart:convert';
 
-void main() {
-  runApp(const CoffeePubApp());
-}
+void main() => runApp(const MyApp());
 
-class CoffeePubApp extends StatelessWidget {
-  const CoffeePubApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: MapScreen(),
-    );
+    return const MaterialApp(home: MapScreen());
   }
 }
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
-
   @override
   State<MapScreen> createState() => _MapScreenState();
 }
 
 class _MapScreenState extends State<MapScreen> {
-  GoogleMapController? _mapController;
-  LatLng? _currentPosition;
-  Set<Marker> _markers = {};
+  LatLng? _userLocation;
+  List<Marker> _markers = [];
 
   @override
   void initState() {
     super.initState();
-    _getUserLocation();
+    _getLocation();
   }
 
-  Future<void> _getUserLocation() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    LocationPermission permission = await Geolocator.checkPermission();
-
-    if (!serviceEnabled) return;
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-
+  Future<void> _getLocation() async {
     Position pos = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
-
     setState(() {
-      _currentPosition = LatLng(pos.latitude, pos.longitude);
+      _userLocation = LatLng(pos.latitude, pos.longitude);
     });
-
     _fetchNearbyPlaces(pos.latitude, pos.longitude);
   }
 
   Future<void> _fetchNearbyPlaces(double lat, double lng) async {
-    const apiKey = "YOUR_API_KEY";
-    final url =
-        'https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=$lat,$lng&radius=2000&type=cafe|bar&key=$apiKey';
-
-    final response = await http.get(Uri.parse(url));
+    // Overpass API query (OpenStreetMap free)
+    final url = Uri.parse(
+      "https://overpass-api.de/api/interpreter?data=[out:json];"
+      "node[amenity~'cafe|bar'](around:2000,$lat,$lng);out;",
+    );
+    final response = await http.get(url);
     final data = json.decode(response.body);
 
-    if (data['status'] == 'OK') {
-      final results = data['results'] as List;
-
-      setState(() {
-        _markers = results.map((place) {
-          final loc = place['geometry']['location'];
-          return Marker(
-            markerId: MarkerId(place['place_id']),
-            position: LatLng(loc['lat'], loc['lng']),
-            infoWindow: InfoWindow(
-              title: place['name'],
-              snippet: place['vicinity'],
-            ),
-          );
-        }).toSet();
-      });
-    }
+    List elements = data["elements"];
+    setState(() {
+      _markers = elements.map((place) {
+        return Marker(
+          point: LatLng(place["lat"], place["lon"]),
+          width: 40,
+          height: 40,
+          child: const Icon(Icons.local_cafe, color: Colors.brown, size: 30),
+        );
+      }).toList();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Nearby Coffee & Pubs"),
-        backgroundColor: Colors.brown[400],
-      ),
-      body: _currentPosition == null
+      appBar: AppBar(title: const Text("Free Coffee & Pubs Map")),
+      body: _userLocation == null
           ? const Center(child: CircularProgressIndicator())
-          : GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: _currentPosition!,
-                zoom: 14,
+          : FlutterMap(
+              options: MapOptions(
+                initialCenter: _userLocation!,
+                initialZoom: 14,
               ),
-              onMapCreated: (controller) {
-                _mapController = controller;
-              },
-              myLocationEnabled: true,
-              markers: _markers,
+              children: [
+                TileLayer(
+                  urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                  userAgentPackageName: 'com.example.app',
+                ),
+                MarkerLayer(markers: _markers),
+              ],
             ),
     );
   }
